@@ -24,6 +24,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/dbutils"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 	"github.com/pocketbase/pocketbase/tools/inflector"
+	"github.com/pocketbase/pocketbase/tools/security"
 	"golang.org/x/oauth2"
 )
 
@@ -83,6 +84,25 @@ func recordAuthWithOAuth2(e *core.RequestEvent) error {
 
 	if provider.PKCE() {
 		opts = append(opts, oauth2.SetAuthURLParam("code_verifier", form.CodeVerifier))
+	}
+
+	if form.Provider == auth.NameVK {
+		// The SDK subscription message uses snake_case "device_id" while the form
+		// expects camelCase "deviceId", so fall back to the server-stored value
+		// that was captured during the redirect callback.
+		if form.DeviceID == "" {
+			if v, ok := e.App.Store().Get(oauth2RedirectVKDeviceIDStorePrefix + form.Code).(string); ok {
+				form.DeviceID = v
+				e.App.Store().Remove(oauth2RedirectVKDeviceIDStorePrefix + form.Code)
+			}
+		}
+		if form.State == "" {
+			form.State = security.RandomString(30)
+		}
+		opts = append(opts,
+			oauth2.SetAuthURLParam("device_id", form.DeviceID),
+			oauth2.SetAuthURLParam("state", form.State),
+		)
 	}
 
 	// fetch token
@@ -189,6 +209,16 @@ type recordOAuth2LoginForm struct {
 
 	// The optional PKCE code verifier as part of the code_challenge sent with the initial request.
 	CodeVerifier string `form:"codeVerifier" json:"codeVerifier"`
+
+	// The oauth2 state parameter from the initial auth URL.
+	//
+	// Required for VK ID provider.
+	State string `form:"state" json:"state"`
+
+	// The device identifier returned by the OAuth redirect callback.
+	//
+	// Required for VK ID provider.
+	DeviceID string `form:"deviceId" json:"deviceId"`
 
 	// The redirect url sent with the initial request.
 	RedirectURL string `form:"redirectURL" json:"redirectURL"`

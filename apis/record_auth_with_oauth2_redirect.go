@@ -17,12 +17,14 @@ const (
 	oauth2RedirectFailurePath             string = "../_/#/auth/oauth2-redirect-failure"
 	oauth2RedirectSuccessPath             string = "../_/#/auth/oauth2-redirect-success"
 	oauth2RedirectAppleNameStoreKeyPrefix string = "@redirect_name_"
+	oauth2RedirectVKDeviceIDStorePrefix   string = "@redirect_vk_device_id_"
 )
 
 type oauth2RedirectData struct {
-	State string `form:"state" json:"state"`
-	Code  string `form:"code" json:"code"`
-	Error string `form:"error" json:"error,omitempty"`
+	State    string `form:"state" json:"state"`
+	Code     string `form:"code" json:"code"`
+	DeviceID string `form:"device_id" json:"device_id,omitempty"`
+	Error    string `form:"error" json:"error,omitempty"`
 
 	// returned by Apple only
 	AppleUser string `form:"user" json:"-"`
@@ -40,6 +42,7 @@ func oauth2SubscriptionRedirect(e *core.RequestEvent) error {
 		query := e.Request.URL.Query()
 		data.State = query.Get("state")
 		data.Code = query.Get("code")
+		data.DeviceID = query.Get("device_id")
 		data.Error = query.Get("error")
 	}
 
@@ -77,6 +80,16 @@ func oauth2SubscriptionRedirect(e *core.RequestEvent) error {
 			// non-critical error
 			e.App.Logger().Debug("Failed to parse and load Apple Redirect name data", "error", nameErr)
 		}
+	}
+
+	// temporary store the VK ID device_id so that it can be retrieved server-side during token exchange
+	// (the SDK may not forward device_id since the subscription message uses snake_case "device_id"
+	// while the auth endpoint form expects camelCase "deviceId")
+	if data.DeviceID != "" && data.Error == "" && data.Code != "" {
+		e.App.Store().Set(oauth2RedirectVKDeviceIDStorePrefix+data.Code, data.DeviceID)
+		time.AfterFunc(1*time.Minute, func() {
+			e.App.Store().Remove(oauth2RedirectVKDeviceIDStorePrefix + data.Code)
+		})
 	}
 
 	encodedData, err := json.Marshal(data)
