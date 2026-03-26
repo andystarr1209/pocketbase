@@ -59,6 +59,23 @@ func recordAuthWithOAuth2(e *core.RequestEvent) error {
 		return firstApiError(err, e.BadRequestError("An error occurred while loading the submitted data.", err))
 	}
 
+	// The SDK doesn't forward the VK-specific redirect fields to the code
+	// exchange call, so fall back to the values captured during the callback.
+	if form.Provider == auth.NameVK {
+		if v, ok := e.App.Store().Get(oauth2RedirectVKStateStorePrefix + form.Code).(string); ok {
+			form.State = v
+			e.App.Store().Remove(oauth2RedirectVKStateStorePrefix + form.Code)
+		}
+		if v, ok := e.App.Store().Get(oauth2RedirectVKDeviceIDStorePrefix + form.Code).(string); ok {
+			form.DeviceID = v
+			e.App.Store().Remove(oauth2RedirectVKDeviceIDStorePrefix + form.Code)
+		}
+
+		if err = form.validateVK(); err != nil {
+			return firstApiError(err, e.BadRequestError("An error occurred while loading the submitted data.", err))
+		}
+	}
+
 	// exchange token for OAuth2 user info and locate existing ExternalAuth rel
 	// ---------------------------------------------------------------
 
@@ -83,6 +100,13 @@ func recordAuthWithOAuth2(e *core.RequestEvent) error {
 
 	if provider.PKCE() {
 		opts = append(opts, oauth2.SetAuthURLParam("code_verifier", form.CodeVerifier))
+	}
+
+	if form.Provider == auth.NameVK {
+		opts = append(opts,
+			oauth2.SetAuthURLParam("device_id", form.DeviceID),
+			oauth2.SetAuthURLParam("state", form.State),
+		)
 	}
 
 	// fetch token
@@ -190,6 +214,16 @@ type recordOAuth2LoginForm struct {
 	// The optional PKCE code verifier as part of the code_challenge sent with the initial request.
 	CodeVerifier string `form:"codeVerifier" json:"codeVerifier"`
 
+	// The oauth2 state parameter from the initial auth URL.
+	//
+	// Required for VK ID provider.
+	State string `form:"state" json:"state"`
+
+	// The device identifier returned by the OAuth redirect callback.
+	//
+	// Required for VK ID provider.
+	DeviceID string `form:"deviceId" json:"deviceId"`
+
 	// The redirect url sent with the initial request.
 	RedirectURL string `form:"redirectURL" json:"redirectURL"`
 
@@ -203,6 +237,13 @@ func (form *recordOAuth2LoginForm) validate() error {
 	return validation.ValidateStruct(form,
 		validation.Field(&form.Provider, validation.Required, validation.Length(0, 100), validation.By(form.checkProviderName)),
 		validation.Field(&form.Code, validation.Required),
+	)
+}
+
+func (form *recordOAuth2LoginForm) validateVK() error {
+	return validation.ValidateStruct(form,
+		validation.Field(&form.State, validation.Required),
+		validation.Field(&form.DeviceID, validation.Required),
 	)
 }
 

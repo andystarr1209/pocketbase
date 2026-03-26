@@ -119,6 +119,40 @@ func TestRecordAuthWithOAuth2(t *testing.T) {
 			ExpectedEvents: map[string]int{"*": 0},
 		},
 		{
+			Name:   "trigger VK specific validations (missing state and deviceId)",
+			Method: http.MethodPost,
+			URL:    "/api/collections/users/auth-with-oauth2",
+			Body: strings.NewReader(`{
+				"provider": "vk",
+				"code":"123",
+				"redirectURL": "https://example.com"
+			}`),
+			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+				collection, err := app.FindCollectionByNameOrId("users")
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				collection.OAuth2.Enabled = true
+				collection.OAuth2.Providers = append(collection.OAuth2.Providers, core.OAuth2ProviderConfig{
+					Name:         "vk",
+					ClientId:     "123",
+					ClientSecret: "456",
+				})
+
+				if err := app.Save(collection); err != nil {
+					t.Fatal(err)
+				}
+			},
+			ExpectedStatus: 400,
+			ExpectedContent: []string{
+				`"data":{`,
+				`"state":`,
+				`"deviceId":`,
+			},
+			ExpectedEvents: map[string]int{"*": 0},
+		},
+		{
 			Name:   "existing linked OAuth2 (unverified user)",
 			Method: http.MethodPost,
 			URL:    "/api/collections/users/auth-with-oauth2",

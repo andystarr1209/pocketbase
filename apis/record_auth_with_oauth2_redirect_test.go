@@ -229,9 +229,9 @@ func TestRecordAuthWithOAuth2Redirect(t *testing.T) {
 		{
 			Name:   "client with @oauth2 subscription",
 			Method: http.MethodGet,
-			URL:    "/api/oauth2-redirect?code=123&state=" + clientStubs[6]["c3"].Id(),
+			URL:    "/api/oauth2-redirect?code=123&device_id=device123&state=" + clientStubs[6]["c3"].Id(),
 			BeforeTestFunc: beforeTestFunc(clientStubs[6], map[string][]string{
-				"c3": {`"state":"` + clientStubs[6]["c3"].Id(), `"code":"123"`},
+				"c3": {`"state":"` + clientStubs[6]["c3"].Id(), `"code":"123"`, `"device_id":"device123"`},
 			}),
 			ExpectedStatus: http.StatusTemporaryRedirect,
 			ExpectedEvents: map[string]int{"*": 0},
@@ -242,6 +242,14 @@ func TestRecordAuthWithOAuth2Redirect(t *testing.T) {
 
 				if clientStubs[6]["c3"].HasSubscription("@oauth2") {
 					t.Fatalf("Expected oauth2 subscription to be removed")
+				}
+
+				if storedDeviceID := app.Store().Get("@redirect_vk_device_id_123"); storedDeviceID != "device123" {
+					t.Fatalf("Expected stored VK device ID %q, got %q", "device123", storedDeviceID)
+				}
+
+				if storedState := app.Store().Get("@redirect_vk_state_123"); storedState != clientStubs[6]["c3"].Id() {
+					t.Fatalf("Expected stored VK state %q, got %q", clientStubs[6]["c3"].Id(), storedState)
 				}
 			},
 		},
